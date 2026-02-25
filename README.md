@@ -15,22 +15,23 @@ Test cases are derived from the **[Sarvam Tools SDK (TOOLING_API.md)](TOOLING_AP
 | **Total latency** | 134.5s | 172ms |
 | **Speed ratio** | 1x | **784x faster** |
 | **Detection rate** | 6/13 (46%) | **12/13 (92%)** |
-| **Cost per run** | $0.024 | $0.00 |
+| **Cost per run (Flash)** | $0.054 | $0.00 |
+| **Cost per run (Pro)** | $0.223 | $0.00 |
 | **JSON parse success** | 4/5 (with robust parser) | N/A (deterministic) |
 | **16K LOC file** | 0/5 planted issues matched | **5/5 planted issues matched** |
 | **httpx client leak** | 0/1 detected | **1/1 detected** |
 
 ### Per-File Breakdown
 
-| File | Lines | Planted | Gemini Found | Gemini Time | Gemini Cost | Static Found | Static Time |
-|---|---|---|---|---|---|---|---|
-| `small_good.py` | 46 | 0 | n/a | 42.1s | $0.000356 | n/a | 17.6ms |
-| `small_bad.py` | 43 | 4 | **4/4** | 21.0s | $0.000870 | **4/4** | 29.5ms |
-| `fake_async.py` | 23 | 1 | **0/1** | 34.4s | $0.000767 | 0/1 | 21.0ms |
-| `httpx_leak.py` | 45 | 3 | 2/3 | 15.3s | $0.000682 | **3/3** | 16.3ms |
-| `large_bad.py` | 16,090 | 5 | **0/5** | 21.7s | $0.021137 | **5/5** | 87.2ms |
+| File | Lines | Planted | Gemini Found | Gemini Time | Flash Cost | Pro Cost | Static Found | Static Time |
+|---|---|---|---|---|---|---|---|---|
+| `small_good.py` | 46 | 0 | n/a | 42.1s | $0.0011 | $0.0046 | n/a | 17.6ms |
+| `small_bad.py` | 43 | 4 | **4/4** | 21.0s | $0.0033 | $0.0132 | **4/4** | 29.5ms |
+| `fake_async.py` | 23 | 1 | **0/1** | 34.4s | $0.0029 | $0.0116 | 0/1 | 21.0ms |
+| `httpx_leak.py` | 45 | 3 | 2/3 | 15.3s | $0.0025 | $0.0100 | **3/3** | 16.3ms |
+| `large_bad.py` | 16,090 | 5 | **0/5** | 21.7s | $0.0443 | $0.1839 | **5/5** | 87.2ms |
 
-> **Note:** Gemini 2.5 Pro was rate-limited during testing; results use Flash as fallback. Pro pricing is ~8x higher ($1.25-2.50/1M input, $10/1M output), making the cost argument even stronger.
+> **Note:** Gemini 2.5 Pro was rate-limited during testing; results use Flash as fallback. Both Flash and Pro costs are shown — Pro pricing ($1.25-2.50/1M input, $10/1M output) makes the cost argument even stronger at **$0.22/run**.
 
 ---
 
@@ -75,9 +76,9 @@ PUT /tools (file upload)
 
 The Gemini API call takes **15-42 seconds per file**. For a production CI/CD pipeline processing multiple tool files per PR, this creates an unacceptable bottleneck. Static analysis completes the same work in under 112ms — **784x faster**.
 
-### 2. Cost ($0.024 per run, scales linearly)
+### 2. Cost ($0.054 Flash / $0.223 Pro per run, scales linearly)
 
-The 16K LOC file alone cost $0.021 in tokens (134K input tokens). In production with multiple files, multiple PRs per day, and multiple environments, this accumulates rapidly. With Gemini 2.5 Pro pricing, the same file would cost **~$0.185** per audit. Static analysis is free.
+The 16K LOC file alone costs $0.044 (Flash) or $0.184 (Pro) in tokens (134K input tokens). In production with multiple files, multiple PRs per day, and multiple environments, this accumulates rapidly. A team running 10 audits/day with Pro pricing would spend **~$2.23/day** or **~$67/month** on audit API calls alone. Static analysis is free.
 
 ### 3. Detection Quality on Large Files (0/5 on 16K LOC)
 
@@ -232,6 +233,6 @@ Replace the LLM-only audit in PR #741 with a **layered approach**:
 | **1. Static analysis** | ruff + custom rules | Blocking calls, security, resource leaks, httpx leaks | <100ms | Free |
 | **2. AST pattern matching** | Custom Python AST visitor | CPU-bound ops in async, missing context managers | <200ms | Free |
 | **3. Runtime analysis** | pytest + asyncio instrumentation | Hidden sync wrappers, actual blocking behavior | Seconds | Free |
-| **4. LLM review** (optional) | Gemini/Claude | Complex architectural issues, code quality feedback | 10-50s | $$$ |
+| **4. LLM review** (optional) | Gemini/Claude | Complex architectural issues, code quality feedback | 10-50s | $0.05-0.22/run |
 
 Layer 1 alone catches **92% of the issues** that PR #741's LLM pipeline targets, at **784x the speed** and **zero cost**. The LLM should be an optional enhancement for nuanced code review, not the primary deployment gate.

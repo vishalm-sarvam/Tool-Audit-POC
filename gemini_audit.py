@@ -18,6 +18,7 @@ class GeminiAuditResult:
     input_tokens: int = 0
     output_tokens: int = 0
     estimated_cost_usd: float = 0.0
+    pro_estimated_cost_usd: float = 0.0
     parse_success: bool = False
     status: str = "UNKNOWN"
     summary: str = ""
@@ -137,6 +138,7 @@ def run_gemini_audit(file_path: str, prompt_template: str) -> GeminiAuditResult:
         result.output_tokens = getattr(meta, "candidates_token_count", 0) or 0
 
     # Calculate cost based on which model was used
+    # Pricing source: https://ai.google.dev/gemini-api/docs/pricing
     if used_model == "gemini-2.5-pro":
         # Pro pricing: Input $1.25/1M (<200K), $2.50/1M (>200K), Output $10.00/1M
         if result.input_tokens <= 200_000:
@@ -148,10 +150,21 @@ def run_gemini_audit(file_path: str, prompt_template: str) -> GeminiAuditResult:
             )
         output_cost = result.output_tokens * 10.00 / 1_000_000
     else:
-        # Flash pricing: Input $0.15/1M, Output $0.60/1M
-        input_cost = result.input_tokens * 0.15 / 1_000_000
-        output_cost = result.output_tokens * 0.60 / 1_000_000
+        # Flash pricing: Input $0.30/1M, Output $2.50/1M
+        input_cost = result.input_tokens * 0.30 / 1_000_000
+        output_cost = result.output_tokens * 2.50 / 1_000_000
     result.estimated_cost_usd = input_cost + output_cost
+
+    # Also calculate what Pro would have cost (for comparison in report)
+    if result.input_tokens <= 200_000:
+        pro_input_cost = result.input_tokens * 1.25 / 1_000_000
+    else:
+        pro_input_cost = (
+            200_000 * 1.25 / 1_000_000
+            + (result.input_tokens - 200_000) * 2.50 / 1_000_000
+        )
+    pro_output_cost = result.output_tokens * 10.00 / 1_000_000
+    result.pro_estimated_cost_usd = pro_input_cost + pro_output_cost
 
     # Extract response text
     try:

@@ -120,7 +120,8 @@ def _print_file_result(name: str, data: dict) -> None:
     print(f"    Latency:       {gemini.latency_seconds:.2f}s")
     print(f"    Input tokens:  {gemini.input_tokens:,}")
     print(f"    Output tokens: {gemini.output_tokens:,}")
-    print(f"    Cost:          ${gemini.estimated_cost_usd:.6f}")
+    print(f"    Cost (Flash):  ${gemini.estimated_cost_usd:.6f}")
+    print(f"    Cost (Pro):    ${gemini.pro_estimated_cost_usd:.6f}")
     print(f"    JSON parsed:   {'Yes' if gemini.parse_success else 'NO — PARSE FAILED'}")
     print(f"    Issues found:  {len(gemini.issues)}")
     if gemini.error:
@@ -157,12 +158,13 @@ def _print_summary(results: dict) -> None:
     print(f"{'=' * 100}")
     print()
 
-    header = f"  {'File':<20} {'Lines':>7} {'Planted':>8} │ {'Gemini Det':>10} {'Gemini Time':>12} {'Gemini Cost':>12} │ {'Static Det':>10} {'Static Time':>12}"
+    header = f"  {'File':<20} {'Lines':>7} {'Planted':>8} │ {'Gemini Det':>10} {'Gemini Time':>12} {'Flash Cost':>12} {'Pro Cost':>12} │ {'Static Det':>10} {'Static Time':>12}"
     print(header)
-    print(f"  {'─' * 18}  {'─' * 7} {'─' * 8} ┼ {'─' * 10} {'─' * 12} {'─' * 12} ┼ {'─' * 10} {'─' * 12}")
+    print(f"  {'─' * 18}  {'─' * 7} {'─' * 8} ┼ {'─' * 10} {'─' * 12} {'─' * 12} {'─' * 12} ┼ {'─' * 10} {'─' * 12}")
 
     total_gemini_time = 0.0
-    total_gemini_cost = 0.0
+    total_flash_cost = 0.0
+    total_pro_cost = 0.0
     total_static_time = 0.0
     total_gemini_detected = 0
     total_static_detected = 0
@@ -181,21 +183,22 @@ def _print_summary(results: dict) -> None:
 
         print(
             f"  {name:<20} {data['line_count']:>7} {len(planted):>8} │ "
-            f"{g_det:>10} {gemini.latency_seconds:>10.2f}s ${gemini.estimated_cost_usd:>10.6f} │ "
+            f"{g_det:>10} {gemini.latency_seconds:>10.2f}s ${gemini.estimated_cost_usd:>10.6f} ${gemini.pro_estimated_cost_usd:>10.6f} │ "
             f"{s_det:>10} {static.latency_ms:>10.1f}ms"
         )
 
         total_gemini_time += gemini.latency_seconds
-        total_gemini_cost += gemini.estimated_cost_usd
+        total_flash_cost += gemini.estimated_cost_usd
+        total_pro_cost += gemini.pro_estimated_cost_usd
         total_static_time += static.latency_ms
         total_gemini_detected += len(gemini_match["matched"])
         total_static_detected += len(static_match["matched"])
         total_planted += len(planted)
 
-    print(f"  {'─' * 18}  {'─' * 7} {'─' * 8} ┼ {'─' * 10} {'─' * 12} {'─' * 12} ┼ {'─' * 10} {'─' * 12}")
+    print(f"  {'─' * 18}  {'─' * 7} {'─' * 8} ┼ {'─' * 10} {'─' * 12} {'─' * 12} {'─' * 12} ┼ {'─' * 10} {'─' * 12}")
     print(
         f"  {'TOTAL':<20} {'':>7} {total_planted:>8} │ "
-        f"{total_gemini_detected}/{total_planted:>8} {total_gemini_time:>10.2f}s ${total_gemini_cost:>10.6f} │ "
+        f"{total_gemini_detected}/{total_planted:>8} {total_gemini_time:>10.2f}s ${total_flash_cost:>10.6f} ${total_pro_cost:>10.6f} │ "
         f"{total_static_detected}/{total_planted:>8} {total_static_time:>10.1f}ms"
     )
 
@@ -203,7 +206,9 @@ def _print_summary(results: dict) -> None:
     if total_gemini_time > 0:
         speedup = (total_gemini_time * 1000) / max(total_static_time, 0.1)
         print(f"\n  Static analysis is {speedup:,.0f}x faster than Gemini")
-    print(f"  Total Gemini API cost: ${total_gemini_cost:.6f}")
+    print(f"  Gemini API cost (Flash): ${total_flash_cost:.6f} / run")
+    print(f"  Gemini API cost (Pro):   ${total_pro_cost:.6f} / run")
+    print(f"  Static analysis cost:    $0.000000 / run")
 
     # Verdict
     print(f"\n{SEPARATOR}")
@@ -211,7 +216,7 @@ def _print_summary(results: dict) -> None:
     print(SEPARATOR)
     print("  The LLM-only audit pipeline (PR #741) has fundamental scaling problems:")
     print(f"    1. Latency: {total_gemini_time:.1f}s total for Gemini vs {total_static_time:.0f}ms for static analysis")
-    print(f"    2. Cost: ${total_gemini_cost:.6f} per run (scales linearly with file size and PR count)")
+    print(f"    2. Cost: ${total_flash_cost:.6f} (Flash) / ${total_pro_cost:.6f} (Pro) per run")
     print(f"    3. Detection: Gemini found {total_gemini_detected}/{total_planted} issues vs static {total_static_detected}/{total_planted}")
     print("    4. fake_async.py: Neither approach detects hidden sync wrappers — runtime analysis needed")
     print("    5. Reliability: LLM output requires JSON parsing, is non-deterministic, and may hallucinate")

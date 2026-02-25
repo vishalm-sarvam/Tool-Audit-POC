@@ -30,14 +30,25 @@ PLANTED = [0, 4, 1, 3, 5]
 GEMINI_FOUND = [0, 4, 0, 2, 0]
 STATIC_FOUND = [0, 4, 0, 3, 5]
 
-# Cost/tokens from v2 run
-GEMINI_COST = [0.000356, 0.000870, 0.000767, 0.000682, 0.021137]
+# Cost/tokens from v2 run (recalculated with correct pricing)
+# Flash: $0.30/1M input, $2.50/1M output
+# Pro:   $1.25/1M input (<200K), $10.00/1M output
 GEMINI_INPUT_TOKENS = [1071, 1026, 969, 1114, 134692]
 GEMINI_OUTPUT_TOKENS = [326, 1193, 1036, 858, 1555]
 
+GEMINI_FLASH_COST = [
+    t_in * 0.30 / 1e6 + t_out * 2.50 / 1e6
+    for t_in, t_out in zip(GEMINI_INPUT_TOKENS, GEMINI_OUTPUT_TOKENS)
+]
+GEMINI_PRO_COST = [
+    t_in * 1.25 / 1e6 + t_out * 10.00 / 1e6
+    for t_in, t_out in zip(GEMINI_INPUT_TOKENS, GEMINI_OUTPUT_TOKENS)
+]
+
 TOTAL_GEMINI_TIME = sum(GEMINI_LATENCY_S)
 TOTAL_STATIC_TIME = sum(STATIC_LATENCY_S)
-TOTAL_GEMINI_COST = sum(GEMINI_COST)
+TOTAL_FLASH_COST = sum(GEMINI_FLASH_COST)
+TOTAL_PRO_COST = sum(GEMINI_PRO_COST)
 SPEEDUP = TOTAL_GEMINI_TIME / TOTAL_STATIC_TIME
 
 # Colors
@@ -147,26 +158,34 @@ def chart_cost():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     fig.patch.set_facecolor(BG_COLOR)
 
-    # Left: Cost per file
+    # Left: Cost per file (Flash + Pro side by side)
     ax1.set_facecolor(BG_COLOR)
     x = np.arange(len(FILES))
-    colors = [GEMINI_COLOR if c < 0.01 else DANGER_COLOR for c in GEMINI_COST]
-    bars = ax1.bar(x, GEMINI_COST, color=colors, edgecolor="white", width=0.6)
+    width = 0.3
 
-    for bar, cost in zip(bars, GEMINI_COST):
-        ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.0003,
-                 f"${cost:.4f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+    bars_flash = ax1.bar(x - width/2, GEMINI_FLASH_COST, width, label="Flash ($0.30/$2.50 per 1M)",
+                         color=GEMINI_COLOR, edgecolor="white")
+    bars_pro = ax1.bar(x + width/2, GEMINI_PRO_COST, width, label="Pro ($1.25/$10.00 per 1M)",
+                       color=DANGER_COLOR, edgecolor="white", alpha=0.8)
+
+    for bar, cost in zip(bars_flash, GEMINI_FLASH_COST):
+        ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.001,
+                 f"${cost:.4f}", ha="center", va="bottom", fontsize=7, fontweight="bold", color=GEMINI_COLOR)
+    for bar, cost in zip(bars_pro, GEMINI_PRO_COST):
+        ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.001,
+                 f"${cost:.4f}", ha="center", va="bottom", fontsize=7, fontweight="bold", color=DANGER_COLOR)
 
     ax1.set_ylabel("Cost (USD)", fontsize=12, fontweight="bold")
-    ax1.set_title("Gemini API Cost Per File", fontsize=14, fontweight="bold", pad=15)
+    ax1.set_title("Gemini API Cost Per File (Flash vs Pro)", fontsize=14, fontweight="bold", pad=15)
     ax1.set_xticks(x)
     ax1.set_xticklabels(FILES, fontsize=8)
+    ax1.legend(fontsize=9)
     ax1.grid(axis="y", alpha=0.3)
 
     # Annotation for total
-    ax1.annotate(f"Total: ${TOTAL_GEMINI_COST:.4f}/run\nStatic: $0.0000/run",
+    ax1.annotate(f"Flash total: ${TOTAL_FLASH_COST:.4f}/run\nPro total: ${TOTAL_PRO_COST:.4f}/run\nStatic: $0.0000/run",
                  xy=(0.98, 0.95), xycoords="axes fraction", ha="right", va="top",
-                 fontsize=11, fontweight="bold",
+                 fontsize=10, fontweight="bold",
                  bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor=DANGER_COLOR))
 
     # Right: Token usage
@@ -214,7 +233,8 @@ def chart_scorecard():
         ("Speed Factor", "1x", f"{SPEEDUP:.0f}x faster", "STATIC"),
         ("Detection Rate", f"{sum(GEMINI_FOUND)}/{sum(PLANTED)} ({sum(GEMINI_FOUND)/sum(PLANTED)*100:.0f}%)",
          f"{sum(STATIC_FOUND)}/{sum(PLANTED)} ({sum(STATIC_FOUND)/sum(PLANTED)*100:.0f}%)", "STATIC"),
-        ("Cost Per Run", f"${TOTAL_GEMINI_COST:.4f}", "$0.0000", "STATIC"),
+        ("Cost/Run (Flash)", f"${TOTAL_FLASH_COST:.4f}", "$0.0000", "STATIC"),
+        ("Cost/Run (Pro)", f"${TOTAL_PRO_COST:.4f}", "$0.0000", "STATIC"),
         ("16K LOC Detection", "0/5 matched", "5/5 matched", "STATIC"),
         ("httpx Client Leak", "0/1 detected", "1/1 detected", "STATIC"),
         ("Deterministic", "No", "Yes", "STATIC"),
