@@ -1,8 +1,8 @@
 # Tool Audit Pipeline Bottleneck Analysis
 
-**Proving that [PR #741](https://github.com/sarvamai/sarvam-app-authoring-service/pull/741)'s LLM-only tool audit pipeline doesn't scale.**
+**Evaluating the AI-Augmented Health Audit approach from the [feature spec](https://www.notion.so/sarvamai/Feat-AI-Augmented-Health-Audit-for-Trusted-Tools-30639c96b62d809793a4e4bac4df3fa3) and [PR #741](https://github.com/sarvamai/sarvam-app-authoring-service/pull/741) — proving that V1 should ship static analysis first, not LLM-only.**
 
-This POC benchmarks **Gemini 2.5 Pro/Flash** (the LLM approach introduced in PR #741) against **ruff + regex pattern matching** (static analysis) on Python tool files of varying sizes. The results demonstrate fundamental scaling, cost, reliability, and detection quality problems with the LLM-only approach.
+This POC benchmarks **Gemini 2.5 Pro/Flash** (the LLM approach in PR #741) against **ruff + regex pattern matching** (static analysis) on Python tool files of varying sizes. The feature spec's own Section 6 proposes a tiered "Filter-Map-Reduce" pipeline — but PR #741 ships only the LLM tier. This POC provides the hard numbers showing why **Tier 1 (static analysis) should be V1**, with LLM as a V2 enhancement.
 
 Test cases are derived from the **[Sarvam Tools SDK (TOOLING_API.md)](TOOLING_API.md)** to ensure coverage of all documented common mistakes and anti-patterns.
 
@@ -101,6 +101,17 @@ The Sarvam [TOOLING_API.md](TOOLING_API.md) explicitly warns about creating `htt
 ### 6. Non-Determinism
 
 LLM outputs vary between runs. The same file may get different issues flagged, different line numbers, or different severity levels. In one run, `small_good.py` (a clean file) returned a JSON parse failure. This makes LLM audits unsuitable as a **gate** for deployment decisions. PR #741's `audit_control` feature flag can block tool deployment based on a non-deterministic assessment.
+
+### 7. PR #741 Implementation Risks
+
+Beyond the benchmark results, the PR itself has architectural concerns:
+
+- **No retry logic**: If the Gemini API call fails or returns garbage, the audit simply fails. No exponential backoff, no fallback model.
+- **Strict Pydantic parsing**: Uses `AuditResult.model_validate_json()` — stricter than our robust `_extract_json()`. In production, parse failures would be *more* frequent than our benchmarks show.
+- **Prompt/schema mismatch**: The prompt asks for severity + recommended fix, but the JSON schema only captures `category`, `file`, `line`. Extra fields from the LLM may break Pydantic validation.
+- **In-process background tasks**: Uses FastAPI `BackgroundTasks`, not a durable queue. Server restart mid-audit = job stuck in RUNNING forever.
+- **No rate limiting**: Every tool upload triggers a Gemini Pro call. No throttle, no cost controls.
+- **No file size limit**: A 100K LOC file would consume ~900K tokens ($1.12 Flash / $4.50 Pro) in a single API call.
 
 ---
 
@@ -224,15 +235,47 @@ for f in r.all_findings:
 
 ---
 
-## Recommendation
+## Alignment with the Feature Spec
 
-Replace the LLM-only audit in PR #741 with a **layered approach**:
+The [feature spec](https://www.notion.so/sarvamai/Feat-AI-Augmented-Health-Audit-for-Trusted-Tools-30639c96b62d809793a4e4bac4df3fa3) (Section 6: "Next Steps") already acknowledges the LLM-only approach has "bottlenecks associated with large-scale file analysis (latency, context loss, and token cost)" and proposes a tiered "Filter-Map-Reduce" pipeline:
 
-| Layer | Tool | What It Catches | Latency | Cost |
-|---|---|---|---|---|
-| **1. Static analysis** | ruff + custom rules | Blocking calls, security, resource leaks, httpx leaks | <100ms | Free |
-| **2. AST pattern matching** | Custom Python AST visitor | CPU-bound ops in async, missing context managers | <200ms | Free |
-| **3. Runtime analysis** | pytest + asyncio instrumentation | Hidden sync wrappers, actual blocking behavior | Seconds | Free |
-| **4. LLM review** (optional) | Gemini/Claude | Complex architectural issues, code quality feedback | 10-50s | $0.05-0.22/run |
+| Spec Tier | Description | Our POC Validates |
+|---|---|---|
+| **Tier 1:** Static AST Pre-Filtering | `ast.NodeVisitor` to scan for blacklisted sync calls (`requests`, `time.sleep`, etc.) | **Yes** — our ruff + regex catches 92% of issues at 784x speed, zero cost |
+| **Tier 2:** Skeleton Extraction | Send class/function signatures to LLM for risk mapping | Not tested — reasonable LLM use case for large files |
+| **Tier 3:** Hotspot Deep Dive | Chunked LLM analysis on risky functions only | Not tested — addresses the 16K LOC context-loss problem |
+| **Tier 4:** Synthesis & Health Score | Combine all tiers into final AuditResult with 1-100 score | Not tested |
 
-Layer 1 alone catches **92% of the issues** that PR #741's LLM pipeline targets, at **784x the speed** and **zero cost**. The LLM should be an optional enhancement for nuanced code review, not the primary deployment gate.
+### The Problem: V1 Ships the Wrong Layer First
+
+PR #741 implements **only the LLM call** (the most expensive, slowest, least reliable component) and defers static analysis to "Next Steps." This POC proves that's backwards:
+
+| | PR #741 V1 (LLM-only) | Proposed V1 (Static-first) |
+|---|---|---|
+| **Latency** | 15-42s per file | <100ms per file |
+| **Cost** | $0.05-0.22/run | $0.00/run |
+| **Detection** | 46% (6/13) | 92% (12/13) |
+| **Large files (16K LOC)** | 0/5 (completely broken) | 5/5 (works perfectly) |
+| **Deterministic** | No (varies between runs) | Yes (same result every time) |
+| **Safe for `is_blocked` gate** | No (non-deterministic PASS/FAIL) | Yes (deterministic) |
+| **Infrastructure** | Vertex AI + API keys + blob storage | `pip install ruff` |
+| **Failure mode** | Silent (wrong lines, missed issues) | Loud (explicit pattern match) |
+
+### Recommendation: Invert the Tier Order
+
+**V1 should ship Tier 1 (static analysis) as the deployment gate.** It's already proven to work:
+
+| Layer | Tool | What It Catches | Latency | Cost | Ship When |
+|---|---|---|---|---|---|
+| **1. Static analysis** | ruff + custom regex | Blocking calls, security, resource leaks, httpx leaks | <100ms | Free | **V1 (now)** |
+| **2. AST pattern matching** | Python `ast.NodeVisitor` | CPU-bound ops in async, missing context managers | <200ms | Free | **V1 (now)** |
+| **3. LLM review** | Gemini (skeleton + hotspot) | Complex architectural issues, nuanced code quality | 10-50s | $0.05-0.22/run | **V2 (enhancement)** |
+| **4. Runtime analysis** | pytest + asyncio instrumentation | Hidden sync wrappers, actual blocking behavior | Seconds | Free | **V2 (enhancement)** |
+
+The `is_blocked` deployment gate should be driven by **deterministic static analysis** (Layers 1-2), not a non-deterministic LLM call. The LLM (Layer 3) adds value as an **advisory review** — generating the Health Score (1-100) and nuanced feedback from the spec's Tier 4 — but should never be the sole gate for blocking deployments.
+
+This approach:
+- Delivers **immediate value** with zero API cost and sub-second latency
+- Catches **92% of the spec's target issues** from day one
+- Provides a **deterministic, reliable gate** for the `audit_control` feature flag
+- Leaves room for LLM integration as a V2 enhancement for the Health Score and deeper semantic analysis
