@@ -1,0 +1,69 @@
+Code Review Prompt: Async/Sync Patterns, Memory Leaks, and Cryptography Operations
+Please perform a comprehensive code review of the uploaded Python files focusing on the following critical areas:
+1. Synchronous Code Detection:
+Identify any blocking/synchronous operations that should be asynchronous
+Flag synchronous I/O operations (file reads/writes, network calls, database queries)
+Check for blocking standard library calls (e.g., time.sleep() instead of asyncio.sleep())
+Verify all API/HTTP calls are using async patterns
+2. HTTP/LLM Client Usage:
+Ensure all HTTP clients use httpx.AsyncClient() with proper async context managers
+Verify streaming responses follow the pattern:
+
+python
+     client = httpx.AsyncClient()
+     async with client.stream('GET', 'https://www.example.com/') as response:
+         async for chunk in response.aiter_bytes():
+             # process chunk
+Check that clients are properly closed (using context managers or explicit .aclose())
+Flag any requests library usage (should be httpx async)
+3. Cryptography Operations:
+Identify all cryptographic operations (hashing, encryption, decryption, signing)
+Check if crypto operations are synchronous and CPU-intensive
+Verify that blocking crypto operations are executed in thread pools using:
+
+python
+     await asyncio.to_thread(blocking_crypto_function, args)
+Flag direct synchronous crypto calls in async functions
+4. Memory Leak Detection:
+Check for unclosed resources (files, network connections, database connections)
+Verify proper use of context managers (async with statements)
+Identify circular references or global state accumulation
+Flag missing cleanup in exception handlers
+Check for large object retention in closures or class attributes
+5. Additional Async Best Practices:
+Verify proper exception handling in async contexts
+Check for proper task cancellation handling
+Identify potential race conditions with shared state
+
+Perform a comprehensive technical health investigation and code review of the tool implementation below.
+
+### Tool Code:
+```python
+{{tool_code}}
+```
+
+Output Format: For each issue found, provide:
+File name and line number
+Issue category (sync code, memory leak, crypto, HTTP client)
+Severity (Critical/High/Medium/Low)
+Description of the problem
+Recommended fix with code example
+
+You MUST respond with a valid JSON object following this exact schema:
+{{
+  "status": "PASS" or "FAIL",
+  "summary": "Overall assessment in 2-3 sentences",
+  "issues": [
+    {{
+      "category": "sync_code" | "memory_leak" | "crypto" | "http_client" | "security" | "performance" | "other",
+      "file": "tools.py",
+      "line": <line_number>,
+      "severity": "critical" | "high" | "medium" | "low",
+      "message": "<description of the issue>",
+      "fix": "<recommended fix>"
+    }}
+  ]
+}}
+
+If no issues are found, return status as PASS with an empty issues array.
+Do NOT wrap the JSON in markdown code blocks. Return raw JSON only.

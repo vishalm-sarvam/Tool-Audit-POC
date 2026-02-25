@@ -1,0 +1,178 @@
+Generating large_bad.py (~15K LOC)...
+  Generated samples/large_bad.py: 16091 lines, 5 planted issues
+    - Line 526: [blocking-call] time.sleep(2) in async method
+    - Line 3038: [sync_code] requests.post() in async method
+    - Line 8054: [memory_leak] open() without context manager
+    - Line 12068: [security] eval() on user input
+    - Line 15580: [crypto] hashlib.pbkdf2_hmac in async without to_thread
+
+────────────────────────────────────────────────────────────
+Running: small_good.py (46 lines, 0 planted issues)...
+    gemini-2.5-pro: rate limited, trying fallback...
+
+────────────────────────────────────────────────────────────
+Running: small_bad.py (43 lines, 4 planted issues)...
+    gemini-2.5-pro: rate limited, trying fallback...
+
+────────────────────────────────────────────────────────────
+Running: fake_async.py (29 lines, 1 planted issues)...
+    gemini-2.5-pro: rate limited, trying fallback...
+
+────────────────────────────────────────────────────────────
+Running: httpx_leak.py (45 lines, 3 planted issues)...
+    gemini-2.5-pro: rate limited, trying fallback...
+
+────────────────────────────────────────────────────────────
+Running: large_bad.py (16090 lines, 5 planted issues)...
+    gemini-2.5-pro: rate limited, trying fallback...
+
+================================================================================
+  FILE: small_good.py (46 lines, 0 planted issues)
+================================================================================
+
+  [Gemini 2.5 Pro]
+    Latency:       42.05s
+    Input tokens:  1,071
+    Output tokens: 326
+    Cost:          $0.000356
+    JSON parsed:   NO — PARSE FAILED
+    Issues found:  0
+    ERROR:         JSON parse failed: Could not parse JSON from response: ```json
+{
+  "status": "FAIL",
+  "summary": "The provided async tool implementation is generally
+    Summary:       [model=gemini-2.5-flash] JSON parse failed: Could not parse JSON from response: ```json
+{
+  "status": "FAIL",
+  "summary...
+    Detection:     0/0 planted issues found
+
+  [Static Analysis (ruff + patterns)]
+    Latency:       17.6ms
+    Ruff findings: 0
+    Regex finds:   0
+    Total (dedup): 0
+    Detection:     0/0 planted issues found
+
+================================================================================
+  FILE: small_bad.py (43 lines, 4 planted issues)
+================================================================================
+
+  [Gemini 2.5 Pro]
+    Latency:       20.99s
+    Input tokens:  1,026
+    Output tokens: 1,193
+    Cost:          $0.000870
+    JSON parsed:   Yes
+    Issues found:  4
+    Summary:       [model=gemini-2.5-flash] The provided code exhibits critical issues related to asynchronous programming, including block...
+    Detection:     4/4 planted issues found
+
+  [Static Analysis (ruff + patterns)]
+    Latency:       29.5ms
+    Ruff findings: 3
+    Regex finds:   4
+    Total (dedup): 6
+    Detection:     4/4 planted issues found
+
+================================================================================
+  FILE: fake_async.py (29 lines, 1 planted issues)
+================================================================================
+
+  [Gemini 2.5 Pro]
+    Latency:       34.42s
+    Input tokens:  969
+    Output tokens: 1,036
+    Cost:          $0.000767
+    JSON parsed:   Yes
+    Issues found:  1
+    Summary:       [model=gemini-2.5-flash] The provided code contains a critical design flaw where an `async` function is described as int...
+    Detection:     1/1 planted issues found
+
+  [Static Analysis (ruff + patterns)]
+    Latency:       21.0ms
+    Ruff findings: 1
+    Regex finds:   0
+    Total (dedup): 1
+    Detection:     0/1 planted issues found
+    MISSED:
+      - Line 22: [hidden-blocking-call] async wrapper around sync lib — undetectable statically
+
+================================================================================
+  FILE: httpx_leak.py (45 lines, 3 planted issues)
+================================================================================
+
+  [Gemini 2.5 Pro]
+    Latency:       15.32s
+    Input tokens:  1,114
+    Output tokens: 858
+    Cost:          $0.000682
+    JSON parsed:   Yes
+    Issues found:  3
+    Summary:       [model=gemini-2.5-flash] The provided code contains critical issues related to asynchronous programming best practices, ...
+    Detection:     2/3 planted issues found
+    MISSED:
+      - Line 23: [resource-leak] httpx.AsyncClient() without context manager — connection leak
+
+  [Static Analysis (ruff + patterns)]
+    Latency:       16.3ms
+    Ruff findings: 5
+    Regex finds:   4
+    Total (dedup): 9
+    Detection:     3/3 planted issues found
+
+================================================================================
+  FILE: large_bad.py (16090 lines, 5 planted issues)
+================================================================================
+
+  [Gemini 2.5 Pro]
+    Latency:       21.68s
+    Input tokens:  134,692
+    Output tokens: 1,555
+    Cost:          $0.021137
+    JSON parsed:   Yes
+    Issues found:  7
+    Summary:       [model=gemini-2.5-flash] The code contains several critical issues related to asynchronous programming patterns, resourc...
+    Detection:     0/5 planted issues found
+    MISSED:
+      - Line 526: [blocking-call] time.sleep(2) in async method
+      - Line 3038: [sync_code] requests.post() in async method
+      - Line 8054: [memory_leak] open() without context manager
+      - Line 12068: [security] eval() on user input
+      - Line 15580: [crypto] hashlib.pbkdf2_hmac in async without to_thread
+
+  [Static Analysis (ruff + patterns)]
+    Latency:       87.2ms
+    Ruff findings: 133
+    Regex finds:   37
+    Total (dedup): 168
+    Detection:     5/5 planted issues found
+
+
+====================================================================================================
+  SUMMARY: Gemini 2.5 Pro vs Static Analysis (ruff + regex)
+====================================================================================================
+
+  File                   Lines  Planted │ Gemini Det  Gemini Time  Gemini Cost │ Static Det  Static Time
+  ──────────────────  ─────── ──────── ┼ ────────── ──────────── ──────────── ┼ ────────── ────────────
+  small_good.py             46        0 │        n/a      42.05s $  0.000356 │        n/a       17.6ms
+  small_bad.py              43        4 │        4/4      20.99s $  0.000870 │        4/4       29.5ms
+  fake_async.py             29        1 │        1/1      34.42s $  0.000767 │        0/1       21.0ms
+  httpx_leak.py             45        3 │        2/3      15.32s $  0.000682 │        3/3       16.3ms
+  large_bad.py           16090        5 │        0/5      21.68s $  0.021137 │        5/5       87.2ms
+  ──────────────────  ─────── ──────── ┼ ────────── ──────────── ──────────── ┼ ────────── ────────────
+  TOTAL                              13 │ 7/      13     134.47s $  0.023812 │ 12/      13      171.5ms
+
+  Static analysis is 784x faster than Gemini
+  Total Gemini API cost: $0.023812
+
+================================================================================
+  VERDICT
+================================================================================
+  The LLM-only audit pipeline (PR #741) has fundamental scaling problems:
+    1. Latency: 134.5s total for Gemini vs 172ms for static analysis
+    2. Cost: $0.023812 per run (scales linearly with file size and PR count)
+    3. Detection: Gemini found 7/13 issues vs static 12/13
+    4. fake_async.py: Neither approach detects hidden sync wrappers — runtime analysis needed
+    5. Reliability: LLM output requires JSON parsing, is non-deterministic, and may hallucinate
+

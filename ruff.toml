@@ -1,0 +1,2 @@
+[lint]
+select = ["ASYNC", "S", "BLE", "E", "W", "F"]

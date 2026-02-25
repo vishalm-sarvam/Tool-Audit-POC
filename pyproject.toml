@@ -1,0 +1,10 @@
+[project]
+name = "tool-audit-poc"
+version = "0.1.0"
+description = "Prove that PR #741's LLM-only tool audit pipeline doesn't scale vs static analysis"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.0.0",
+    "matplotlib>=3.8.0",
+    "ruff>=0.8.0",
+]
